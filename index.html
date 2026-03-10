@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Wizard Duel</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h2>Wizard Duel</h2>
+
+<div id="select">
+<h3>Choose Your Wizard</h3>
+<button onclick="pick('fire')">🔥 Fire</button>
+<button onclick="pick('water')">🌊 Water</button>
+<button onclick="pick('wind')">🌪 Wind</button>
+</div>
+
+<div id="game" style="display:none">
+<div class="hpcontainer">
+<div>Player 1 HP</div>
+<div class="hpbar"><div id="hp1" class="hp"></div></div>
+<div>Player 2 HP</div>
+<div class="hpbar"><div id="hp2" class="hp"></div></div>
+</div>
+
+<div id="board"></div>
+
+<div id="skills">
+<button onclick="skill('spear')">Spear</button>
+<button onclick="skill('rook')">Line</button>
+<button onclick="skill('bishop')">Diagonal</button>
+<button onclick="skill('queen')">Burst</button>
+<button onclick="skill('fake')">Fake Cast</button>
+</div>
+
+<div id="log"></div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
