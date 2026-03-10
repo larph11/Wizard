@@ -3,15 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>WIZARD - MEGA CHAOS</title>
+    <title>WIZARD CHAOS</title>
     <style>
         :root { --bg: #0b0b0e; --gold: #ffd700; --ui: #1a1a1a; --active: #4e7fff; }
         body { background-color: var(--bg); color: white; font-family: 'Courier New', monospace; margin: 0; display: flex; flex-direction: column; align-items: center; touch-action: manipulation; overflow: hidden; height: 100vh; }
         
         #setup-screen { position: absolute; inset: 0; background: var(--bg); z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; text-align: center; }
-        .setup-box { background: #1a1a1a; padding: 20px; border: 2px solid #444; border-radius: 12px; width: 90%; max-width: 400px; }
-        input { background: #333; border: 1px solid #666; color: white; padding: 8px; width: 100px; border-radius: 4px; margin: 5px; text-align: center; }
+        .setup-box { background: #1a1a1a; padding: 20px; border: 2px solid #444; border-radius: 12px; width: 95%; max-width: 450px; }
+        input[type="number"], input[type="text"] { background: #333; border: 1px solid #666; color: white; padding: 5px; border-radius: 4px; margin: 2px; text-align: center; }
         
+        .p-row { display: grid; grid-template-columns: 1fr 2fr 1fr; align-items: center; gap: 5px; margin-bottom: 5px; background: #222; padding: 5px; border-radius: 5px; font-size: 12px;}
+
         #game-wrapper { width: 95vw; max-width: 500px; display: flex; flex-direction: column; gap: 5px; height: 100vh; padding: 5px 0; }
         canvas { width: 100%; aspect-ratio: 1/1; image-rendering: pixelated; border: 2px solid #444; background: #222; }
         
@@ -49,17 +51,13 @@
 
 <div id="setup-screen">
     <div class="setup-box">
-        <h1 style="color:var(--gold); margin-top:0;">CHAOS SETUP</h1>
-        
-        <label>Player Count: </label>
-        <input type="number" id="p-count" value="2" min="2" max="8" onchange="genInputs()"><br>
-        
-        <label>Starting HP: </label>
-        <input type="number" id="start-hp" value="100" min="10" max="999"><br>
-
-        <div id="p-names" style="max-height: 30vh; overflow-y: auto; margin: 15px 0; border-top: 1px solid #444; padding-top: 10px;"></div>
-        
-        <button onclick="startGame()" style="width: 100%; padding: 15px; font-size: 18px; background: var(--active); color: white; border: none; border-radius: 8px; cursor: pointer;">START BATTLE</button>
+        <h1 style="color:var(--gold); margin:0 0 10px 0;">WIZARD CHAOS AI</h1>
+        <div style="margin-bottom:10px;">
+            Players: <input type="number" id="p-count" value="2" min="2" max="8" onchange="genInputs()">
+            HP: <input type="number" id="start-hp" value="100" style="width:60px;">
+        </div>
+        <div id="p-names" style="max-height: 40vh; overflow-y: auto; margin-bottom: 10px;"></div>
+        <button onclick="startGame()" style="width: 100%; padding: 15px; font-size: 18px; background: var(--active); color: white; border: none; border-radius: 8px; cursor: pointer;">START GAME</button>
     </div>
 </div>
 
@@ -84,20 +82,8 @@
 </div>
 
 <script>
-    // ==========================================
-    // EASY DAMAGE CONFIGURATION
-    // Change these numbers to adjust balance
-    // ==========================================
-    const DAMAGE_VALUES = {
-        'KO':    100,  // Damage for One-Hit KO
-        'AREA':  30,   // Damage for Mass Blast
-        'LINE':  50,   // Damage for Thick Cross
-        'DIAG':  50,   // Damage for Thick X-Diagonal
-        'QUEEN': 35    // Damage for Mega Queen
-    };
-    
-    const CRIT_CHANCE = 0.10; // 10% chance for Double Damage
-    // ==========================================
+    const DAMAGE_VALUES = { 'KO': 100, 'AREA': 30, 'LINE': 50, 'DIAG': 50, 'QUEEN': 30 };
+    const CRIT_CHANCE = 0.10;
 
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
@@ -119,7 +105,14 @@
         const count = document.getElementById('p-count').value;
         const div = document.getElementById('p-names');
         div.innerHTML = '';
-        for(let i=0; i<count; i++) div.innerHTML += `<div>P${i+1}: <input id="name-${i}" value="Wizard ${i+1}"></div>`;
+        for(let i=0; i<count; i++) {
+            div.innerHTML += `
+            <div class="p-row">
+                <span>P${i+1}</span>
+                <input type="text" id="name-${i}" value="Wizard ${i+1}" style="width:80%">
+                <label style="font-size:10px"><input type="checkbox" id="bot-${i}"> AI</label>
+            </div>`;
+        }
     }
     genInputs();
 
@@ -127,24 +120,83 @@
         bgm.play().catch(() => {});
         const count = parseInt(document.getElementById('p-count').value);
         initialHP = parseInt(document.getElementById('start-hp').value);
-
-        if(count <= 2) gridSize = 10;
-        else if(count === 3) gridSize = 12;
-        else if(count === 4) gridSize = 16;
-        else gridSize = 32;
-        
+        gridSize = (count <= 2) ? 10 : (count <= 4) ? 16 : 32;
         ts = 800 / gridSize;
         players = [];
         for(let i=0; i<count; i++) {
             players.push({
                 name: document.getElementById('name-'+i).value,
                 hp: initialHP, maxHp: initialHP,
+                isBot: document.getElementById('bot-'+i).checked,
                 x: Math.floor(Math.random() * gridSize), y: Math.floor(Math.random() * gridSize),
                 color: `hsl(${(i * 360/count)}, 70%, 60%)`, alive: true
             });
         }
         document.getElementById('setup-screen').style.display = 'none';
         startAttackerPhase();
+    }
+
+    function startAttackerPhase() {
+        state = 'AIMING_PHASE'; selectedSkill = null; aimTile = null; tempDodges = {};
+        updateHP();
+        document.querySelectorAll('.controls button').forEach(b => b.classList.remove('skill-selected'));
+        document.getElementById('ui-controls').style.opacity = '1';
+        document.getElementById('confirm-btn').style.display = 'none';
+        showNotification(players[turnIdx].name, players[turnIdx].isBot ? "BOT THINKING..." : "AIM YOUR SPELL");
+        render();
+
+        if(players[turnIdx].isBot) setTimeout(botAttack, 1500);
+    }
+
+    function botAttack() {
+        const skills = ['KO', 'AREA', 'LINE', 'DIAG', 'QUEEN'];
+        selectedSkill = skills[Math.floor(Math.random() * skills.length)];
+        
+        // Target closest alive player
+        let target = null; let minDist = 999;
+        players.forEach((p, i) => {
+            if(p.alive && i !== turnIdx) {
+                let d = Math.abs(p.x - players[turnIdx].x) + Math.abs(p.y - players[turnIdx].y);
+                if(d < minDist) { minDist = d; target = p; }
+            }
+        });
+        aimTile = { x: target.x, y: target.y };
+        render();
+        setTimeout(handleConfirm, 1000);
+    }
+
+    function startNextDodge(startFrom) {
+        dodgingIdx = startFrom;
+        while(dodgingIdx < players.length && (dodgingIdx === turnIdx || !players[dodgingIdx].alive)) dodgingIdx++;
+        
+        if(dodgingIdx >= players.length) executeChaos();
+        else {
+            state = 'DODGING_PHASE';
+            document.getElementById('ui-controls').style.opacity = '0.3';
+            document.getElementById('confirm-btn').style.display = 'none';
+            tempDodges[dodgingIdx] = {x: players[dodgingIdx].x, y: players[dodgingIdx].y};
+            showNotification(players[dodgingIdx].name, players[dodgingIdx].isBot ? "BOT DODGING..." : "CHOOSE YOUR DODGE");
+            render();
+
+            if(players[dodgingIdx].isBot) setTimeout(botDodge, 1000);
+        }
+    }
+
+    function botDodge() {
+        const range = getRange(selectedSkill, aimTile);
+        const p = players[dodgingIdx];
+        const isSafe = (tx, ty) => !range.some(r => r.x === tx && r.y === ty);
+
+        if(!isSafe(p.x, p.y)) {
+            // Pick a random tile, but weighted toward safe ones
+            for(let attempt=0; attempt<20; attempt++) {
+                let rx = Math.floor(Math.random() * gridSize);
+                let ry = Math.floor(Math.random() * gridSize);
+                if(isSafe(rx, ry)) { tempDodges[dodgingIdx] = {x: rx, y: ry}; break; }
+            }
+        }
+        render();
+        setTimeout(handleConfirm, 800);
     }
 
     function executeChaos() {
@@ -158,23 +210,14 @@
             if(range.some(r => r.x === p.x && r.y === p.y)) hits.push(i);
         });
 
-        if(hits.length > 0) {
-            wrapper.classList.add('quake'); if(!sfxMuted) sndHit.play();
-        } else { if(!sfxMuted) sndMiss.play(); }
+        if(hits.length > 0) { wrapper.classList.add('quake'); if(!sfxMuted) sndHit.play(); } 
+        else { if(!sfxMuted) sndMiss.play(); }
 
         hits.forEach(i => {
-            let p = players[i];
-            let dmg = DAMAGE_VALUES[selectedSkill] || 20;
-            
-            // Critical Hit Logic
-            if(Math.random() < CRIT_CHANCE) {
-                dmg *= 2;
-                log(`CRITICAL HIT! ${p.name} took ${dmg} damage!`);
-            } else {
-                log(`${p.name} hit for ${dmg} damage.`);
-            }
-
-            p.hp -= dmg; if(p.hp <= 0) p.alive = false;
+            let dmg = DAMAGE_VALUES[selectedSkill];
+            if(Math.random() < CRIT_CHANCE) { dmg *= 2; log(`CRIT! ${players[i].name} -${dmg}HP`); }
+            else { log(`${players[i].name} -${dmg}HP`); }
+            players[i].hp -= dmg; if(players[i].hp <= 0) players[i].alive = false;
         });
 
         setTimeout(() => { wrapper.classList.remove('quake'); checkWinState(); }, 1000);
@@ -187,7 +230,7 @@
         }, 50);
     }
 
-    // --- RANGE LOGIC (UNCHANGED BUT ROBUST) ---
+    // --- UTILITY FUNCTIONS ---
     function getRange(skill, origin) {
         if(!origin) return [];
         let t = []; const {x, y} = origin;
@@ -199,8 +242,8 @@
         if(skill==='LINE') { for(let i=0; i<gridSize; i++) { addZone(i, y); addZone(x, i); } }
         if(skill==='DIAG') { for(let i=-gridSize; i<gridSize; i++) { addZone(x+i, y+i); addZone(x+i, y-i); } }
         if(skill==='AREA') {
-            let areaSize = (gridSize === 32) ? 6 : 2;
-            for(let i=-areaSize; i<=areaSize; i++) for(let j=-areaSize; j<=areaSize; j++) t.push({x: x+i, y: y+j});
+            let sz = (gridSize === 32) ? 6 : 2;
+            for(let i=-sz; i<=sz; i++) for(let j=-sz; j<=sz; j++) t.push({x: x+i, y: y+j});
         }
         if(skill==='QUEEN') {
             for(let i=0; i<gridSize; i++) {
@@ -210,21 +253,10 @@
         }
         const seen = new Set();
         return t.filter(v => {
-            const key = `${v.x},${v.y}`;
-            if(v.x>=0 && v.x<gridSize && v.y>=0 && v.y<gridSize && !seen.has(key)) { seen.add(key); return true; }
+            const k = `${v.x},${v.y}`;
+            if(v.x>=0 && v.x<gridSize && v.y>=0 && v.y<gridSize && !seen.has(k)) { seen.add(k); return true; }
             return false;
         });
-    }
-
-    // --- RENDER & TURN LOGIC ---
-    function startAttackerPhase() {
-        state = 'AIMING_PHASE'; selectedSkill = null; aimTile = null; tempDodges = {};
-        updateHP();
-        document.querySelectorAll('.controls button').forEach(b => b.classList.remove('skill-selected'));
-        document.getElementById('ui-controls').style.opacity = '1';
-        document.getElementById('confirm-btn').style.display = 'none';
-        showNotification(players[turnIdx].name, "AIM YOUR SPELL");
-        render();
     }
     function render() {
         ctx.clearRect(0,0,800,800);
@@ -241,7 +273,7 @@
         players.forEach(p => { if(p.alive) {
             ctx.fillStyle = p.color; ctx.fillRect(p.x*ts+ts*0.2, p.y*ts+ts*0.2, ts*0.6, ts*0.6);
             ctx.fillStyle = "white"; ctx.font = `${Math.max(ts*0.4, 8)}px monospace`; ctx.textAlign = "center";
-            ctx.fillText(p.name, p.x*ts + ts/2, p.y*ts - 2);
+            ctx.fillText(p.name + (p.isBot?" (BOT)":""), p.x*ts + ts/2, p.y*ts - 2);
         }});
     }
     function showNotification(name, task) {
@@ -259,6 +291,8 @@
         });
     }
     canvas.addEventListener('mousedown', (e) => {
+        if(players[turnIdx]?.isBot && state==='AIMING_PHASE') return;
+        if(players[dodgingIdx]?.isBot && state==='DODGING_PHASE') return;
         const rect = canvas.getBoundingClientRect();
         const x = Math.floor(((e.clientX - rect.left) / rect.width) * gridSize);
         const y = Math.floor(((e.clientY - rect.top) / rect.height) * gridSize);
@@ -266,13 +300,8 @@
         else if(state === 'DODGING_PHASE') { tempDodges[dodgingIdx] = {x, y}; document.getElementById('confirm-btn').style.display = 'block'; }
         render();
     });
-    function pickSkill(s) { if(state !== 'AIMING_PHASE') return; selectedSkill = s; document.querySelectorAll('.controls button').forEach(b => b.classList.remove('skill-selected')); document.getElementById('btn-' + s).classList.add('skill-selected'); render(); }
+    function pickSkill(s) { if(state !== 'AIMING_PHASE' || players[turnIdx].isBot) return; selectedSkill = s; document.querySelectorAll('.controls button').forEach(b => b.classList.remove('skill-selected')); document.getElementById('btn-' + s).classList.add('skill-selected'); render(); }
     function handleConfirm() { if(state === 'AIMING_PHASE') startNextDodge(0); else if(state === 'DODGING_PHASE') startNextDodge(dodgingIdx + 1); }
-    function startNextDodge(startFrom) {
-        dodgingIdx = startFrom; while(dodgingIdx < players.length && (dodgingIdx === turnIdx || !players[dodgingIdx].alive)) dodgingIdx++;
-        if(dodgingIdx >= players.length) executeChaos();
-        else { state = 'DODGING_PHASE'; document.getElementById('ui-controls').style.opacity = '0.3'; document.getElementById('confirm-btn').style.display = 'none'; tempDodges[dodgingIdx] = {x: players[dodgingIdx].x, y: players[dodgingIdx].y}; showNotification(players[dodgingIdx].name, "CHOOSE YOUR DODGE"); render(); }
-    }
     function checkWinState() {
         const survivors = players.filter(p => p.alive);
         if(survivors.length <= 1) { alert("WINNER: " + (survivors[0]?.name || "NONE")); location.reload(); }
