@@ -12,23 +12,22 @@
         .setup-box { background: #1a1a1a; padding: 20px; border: 2px solid #444; border-radius: 12px; width: 95%; max-width: 450px; }
         input[type="number"], input[type="text"] { background: #333; border: 1px solid #666; color: white; padding: 5px; border-radius: 4px; margin: 2px; text-align: center; }
         
-        .p-row { display: grid; grid-template-columns: 1fr 2fr 1fr; align-items: center; gap: 5px; margin-bottom: 5px; background: #222; padding: 5px; border-radius: 5px; font-size: 12px;}
+        /* Slider Styling */
+        .slider-cont { margin: 15px 0; padding: 10px; background: #222; border-radius: 8px; }
+        input[type="range"] { width: 80%; cursor: pointer; accent-color: var(--gold); }
 
+        .p-row { display: grid; grid-template-columns: 1fr 2fr 1fr; align-items: center; gap: 5px; margin-bottom: 5px; background: #222; padding: 5px; border-radius: 5px; font-size: 12px;}
         #game-wrapper { width: 95vw; max-width: 500px; display: flex; flex-direction: column; gap: 5px; height: 100vh; padding: 5px 0; }
         canvas { width: 100%; aspect-ratio: 1/1; image-rendering: pixelated; border: 2px solid #444; background: #222; }
-        
         .audio-controls { position: absolute; top: 10px; right: 10px; display: flex; gap: 10px; z-index: 300; }
         .audio-btn { background: rgba(0,0,0,0.6); border: 1px solid #555; color: white; padding: 8px; border-radius: 8px; font-size: 14px; cursor: pointer; }
-        
         .turn-pop { position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.9); border: 3px solid var(--gold); padding: 20px; text-align: center; pointer-events: none; opacity: 0; transition: opacity 0.4s; z-index: 150; width: 70%; border-radius: 10px; }
         .show-pop { opacity: 1; }
-
         .hp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; background: var(--ui); padding: 8px; font-size: 10px; border-radius: 5px; }
         .hp-item { border: 1px solid #333; padding: 4px; border-radius: 3px; }
         .hp-bar { height: 6px; background: #222; width: 100%; margin-top: 3px; border-radius: 3px; overflow: hidden; }
         .hp-fill { height: 100%; background: #ff4e4e; transition: width 0.3s; }
         .active-p { border-color: var(--gold); background: #2a2a20; box-shadow: 0 0 5px var(--gold); }
-
         .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; background: var(--ui); padding: 10px; border-radius: 5px; }
         button { background: #333; color: white; border: 1px solid #555; padding: 12px 2px; font-size: 10px; font-weight: bold; border-radius: 4px; }
         button.skill-selected { background: var(--active); border-color: white; }
@@ -52,11 +51,18 @@
 <div id="setup-screen">
     <div class="setup-box">
         <h1 style="color:var(--gold); margin:0 0 10px 0;">WIZARD CHAOS AI</h1>
+        
         <div style="margin-bottom:10px;">
             Players: <input type="number" id="p-count" value="2" min="2" max="8" onchange="genInputs()">
             HP: <input type="number" id="start-hp" value="100" style="width:60px;">
         </div>
-        <div id="p-names" style="max-height: 40vh; overflow-y: auto; margin-bottom: 10px;"></div>
+
+        <div class="slider-cont">
+            <label>Bot IQ: <span id="iq-label">Normal</span></label><br>
+            <input type="range" id="bot-iq" min="0" max="100" value="50" oninput="updateIQ()">
+        </div>
+
+        <div id="p-names" style="max-height: 30vh; overflow-y: auto; margin-bottom: 10px;"></div>
         <button onclick="startGame()" style="width: 100%; padding: 15px; font-size: 18px; background: var(--active); color: white; border: none; border-radius: 8px; cursor: pointer;">START GAME</button>
     </div>
 </div>
@@ -85,6 +91,17 @@
     const DAMAGE_VALUES = { 'KO': 100, 'AREA': 30, 'LINE': 50, 'DIAG': 50, 'QUEEN': 30 };
     const CRIT_CHANCE = 0.10;
 
+    let botIQValue = 50; 
+    function updateIQ() {
+        botIQValue = document.getElementById('bot-iq').value;
+        const label = document.getElementById('iq-label');
+        if(botIQValue < 20) label.innerText = "Brainless";
+        else if(botIQValue < 45) label.innerText = "Easy";
+        else if(botIQValue < 75) label.innerText = "Normal";
+        else if(botIQValue < 95) label.innerText = "Hard";
+        else label.innerText = "God Mode";
+    }
+
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     const wrapper = document.getElementById('game-wrapper');
@@ -110,7 +127,7 @@
             <div class="p-row">
                 <span>P${i+1}</span>
                 <input type="text" id="name-${i}" value="Wizard ${i+1}" style="width:80%">
-                <label style="font-size:10px"><input type="checkbox" id="bot-${i}"> AI</label>
+                <label style="font-size:10px"><input type="checkbox" id="bot-${i}" ${i>0?'checked':''}> AI</label>
             </div>`;
         }
     }
@@ -136,6 +153,32 @@
         startAttackerPhase();
     }
 
+    function botDodge() {
+        const range = getRange(selectedSkill, aimTile);
+        const p = players[dodgingIdx];
+        const isSafe = (tx, ty) => !range.some(r => r.x === tx && r.y === ty);
+
+        // BOT IQ LOGIC
+        // God Mode (IQ 100) = 0% Panic. Brainless (IQ 0) = 100% Panic.
+        let panicChance = (100 - botIQValue) / 100; 
+
+        if (Math.random() < panicChance && !isSafe(p.x, p.y)) {
+            log(`${p.name} panicked!`);
+        } else {
+            // High IQ bots try more random tiles to find safety
+            let searchAttempts = Math.floor(botIQValue / 5) + 1; 
+            for(let attempt=0; attempt < searchAttempts; attempt++) {
+                let rx = Math.floor(Math.random() * gridSize);
+                let ry = Math.floor(Math.random() * gridSize);
+                if(isSafe(rx, ry)) { tempDodges[dodgingIdx] = {x: rx, y: ry}; break; }
+            }
+        }
+        
+        render();
+        setTimeout(handleConfirm, 800);
+    }
+
+    // --- REUSED CORE ENGINE FUNCTIONS ---
     function startAttackerPhase() {
         state = 'AIMING_PHASE'; selectedSkill = null; aimTile = null; tempDodges = {};
         updateHP();
@@ -144,93 +187,50 @@
         document.getElementById('confirm-btn').style.display = 'none';
         showNotification(players[turnIdx].name, players[turnIdx].isBot ? "BOT THINKING..." : "AIM YOUR SPELL");
         render();
-
-        if(players[turnIdx].isBot) setTimeout(botAttack, 1500);
+        if(players[turnIdx].isBot) setTimeout(botAttack, 1000);
     }
-
     function botAttack() {
         const skills = ['KO', 'AREA', 'LINE', 'DIAG', 'QUEEN'];
         selectedSkill = skills[Math.floor(Math.random() * skills.length)];
-        
-        // Target closest alive player
         let target = null; let minDist = 999;
-        players.forEach((p, i) => {
-            if(p.alive && i !== turnIdx) {
-                let d = Math.abs(p.x - players[turnIdx].x) + Math.abs(p.y - players[turnIdx].y);
-                if(d < minDist) { minDist = d; target = p; }
-            }
-        });
+        players.forEach((p, i) => { if(p.alive && i !== turnIdx) {
+            let d = Math.abs(p.x - players[turnIdx].x) + Math.abs(p.y - players[turnIdx].y);
+            if(d < minDist) { minDist = d; target = p; }
+        }});
         aimTile = { x: target.x, y: target.y };
-        render();
-        setTimeout(handleConfirm, 1000);
+        render(); setTimeout(handleConfirm, 1000);
     }
-
     function startNextDodge(startFrom) {
         dodgingIdx = startFrom;
         while(dodgingIdx < players.length && (dodgingIdx === turnIdx || !players[dodgingIdx].alive)) dodgingIdx++;
-        
         if(dodgingIdx >= players.length) executeChaos();
         else {
-            state = 'DODGING_PHASE';
-            document.getElementById('ui-controls').style.opacity = '0.3';
+            state = 'DODGING_PHASE'; document.getElementById('ui-controls').style.opacity = '0.3';
             document.getElementById('confirm-btn').style.display = 'none';
             tempDodges[dodgingIdx] = {x: players[dodgingIdx].x, y: players[dodgingIdx].y};
             showNotification(players[dodgingIdx].name, players[dodgingIdx].isBot ? "BOT DODGING..." : "CHOOSE YOUR DODGE");
             render();
-
             if(players[dodgingIdx].isBot) setTimeout(botDodge, 1000);
         }
     }
-
-    function botDodge() {
-        const range = getRange(selectedSkill, aimTile);
-        const p = players[dodgingIdx];
-        const isSafe = (tx, ty) => !range.some(r => r.x === tx && r.y === ty);
-
-        if(!isSafe(p.x, p.y)) {
-            // Pick a random tile, but weighted toward safe ones
-            for(let attempt=0; attempt<20; attempt++) {
-                let rx = Math.floor(Math.random() * gridSize);
-                let ry = Math.floor(Math.random() * gridSize);
-                if(isSafe(rx, ry)) { tempDodges[dodgingIdx] = {x: rx, y: ry}; break; }
-            }
-        }
-        render();
-        setTimeout(handleConfirm, 800);
-    }
-
     function executeChaos() {
         state = 'ANIMATING';
         const range = getRange(selectedSkill, aimTile);
         let hits = [];
         for(let i in tempDodges) { players[i].x = tempDodges[i].x; players[i].y = tempDodges[i].y; }
-
-        players.forEach((p, i) => {
-            if(!p.alive || i === turnIdx) return;
-            if(range.some(r => r.x === p.x && r.y === p.y)) hits.push(i);
-        });
-
-        if(hits.length > 0) { wrapper.classList.add('quake'); if(!sfxMuted) sndHit.play(); } 
-        else { if(!sfxMuted) sndMiss.play(); }
-
+        players.forEach((p, i) => { if(!p.alive || i === turnIdx) return; if(range.some(r => r.x === p.x && r.y === p.y)) hits.push(i); });
+        if(hits.length > 0) { wrapper.classList.add('quake'); if(!sfxMuted) sndHit.play(); } else { if(!sfxMuted) sndMiss.play(); }
         hits.forEach(i => {
             let dmg = DAMAGE_VALUES[selectedSkill];
             if(Math.random() < CRIT_CHANCE) { dmg *= 2; log(`CRIT! ${players[i].name} -${dmg}HP`); }
             else { log(`${players[i].name} -${dmg}HP`); }
             players[i].hp -= dmg; if(players[i].hp <= 0) players[i].alive = false;
         });
-
         setTimeout(() => { wrapper.classList.remove('quake'); checkWinState(); }, 1000);
         let count = 0;
-        const anim = setInterval(() => {
-            render();
-            ctx.fillStyle = hits.length > 0 ? 'rgba(255,50,50,0.5)' : 'rgba(100,200,255,0.3)';
-            range.forEach(t => ctx.fillRect(t.x*ts, t.y*ts, ts, ts));
-            if(count++ > 15) clearInterval(anim);
-        }, 50);
+        const anim = setInterval(() => { render(); ctx.fillStyle = hits.length > 0 ? 'rgba(255,50,50,0.5)' : 'rgba(100,200,255,0.3)';
+            range.forEach(t => ctx.fillRect(t.x*ts, t.y*ts, ts, ts)); if(count++ > 15) clearInterval(anim); }, 50);
     }
-
-    // --- UTILITY FUNCTIONS ---
     function getRange(skill, origin) {
         if(!origin) return [];
         let t = []; const {x, y} = origin;
@@ -241,72 +241,24 @@
         if(skill==='KO') addZone(x, y);
         if(skill==='LINE') { for(let i=0; i<gridSize; i++) { addZone(i, y); addZone(x, i); } }
         if(skill==='DIAG') { for(let i=-gridSize; i<gridSize; i++) { addZone(x+i, y+i); addZone(x+i, y-i); } }
-        if(skill==='AREA') {
-            let sz = (gridSize === 32) ? 6 : 2;
-            for(let i=-sz; i<=sz; i++) for(let j=-sz; j<=sz; j++) t.push({x: x+i, y: y+j});
-        }
-        if(skill==='QUEEN') {
-            for(let i=0; i<gridSize; i++) {
-                addZone(x+i, y); addZone(x-i, y); addZone(x, y+i); addZone(x, y-i);
-                addZone(x+i, y+i); addZone(x-i, y-i); addZone(x+i, y-i); addZone(x-i, y+i);
-            }
-        }
+        if(skill==='AREA') { let sz = (gridSize === 32) ? 6 : 2; for(let i=-sz; i<=sz; i++) for(let j=-sz; j<=sz; j++) t.push({x: x+i, y: y+j}); }
+        if(skill==='QUEEN') { for(let i=0; i<gridSize; i++) { addZone(x+i, y); addZone(x-i, y); addZone(x, y+i); addZone(x, y-i); addZone(x+i, y+i); addZone(x-i, y-i); addZone(x+i, y-i); addZone(x-i, y+i); } }
         const seen = new Set();
-        return t.filter(v => {
-            const k = `${v.x},${v.y}`;
-            if(v.x>=0 && v.x<gridSize && v.y>=0 && v.y<gridSize && !seen.has(k)) { seen.add(k); return true; }
-            return false;
-        });
+        return t.filter(v => { const k = `${v.x},${v.y}`; if(v.x>=0 && v.x<gridSize && v.y>=0 && v.y<gridSize && !seen.has(k)) { seen.add(k); return true; } return false; });
     }
     function render() {
         ctx.clearRect(0,0,800,800);
-        for(let i=0;i<gridSize;i++) for(let j=0;j<gridSize;j++) {
-            ctx.fillStyle = (i+j)%2===0 ? '#1a1a1a' : '#222'; ctx.fillRect(i*ts, j*ts, ts, ts);
-        }
-        if(state === 'AIMING_PHASE' && aimTile) {
-            ctx.fillStyle = 'rgba(255, 215, 0, 0.4)';
-            getRange(selectedSkill, aimTile).forEach(t => ctx.fillRect(t.x*ts, t.y*ts, ts, ts));
-        }
-        if(state === 'DODGING_PHASE' && tempDodges[dodgingIdx]) {
-            ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.strokeRect(tempDodges[dodgingIdx].x*ts, tempDodges[dodgingIdx].y*ts, ts, ts);
-        }
-        players.forEach(p => { if(p.alive) {
-            ctx.fillStyle = p.color; ctx.fillRect(p.x*ts+ts*0.2, p.y*ts+ts*0.2, ts*0.6, ts*0.6);
-            ctx.fillStyle = "white"; ctx.font = `${Math.max(ts*0.4, 8)}px monospace`; ctx.textAlign = "center";
-            ctx.fillText(p.name + (p.isBot?" (BOT)":""), p.x*ts + ts/2, p.y*ts - 2);
-        }});
+        for(let i=0;i<gridSize;i++) for(let j=0;j<gridSize;j++) { ctx.fillStyle = (i+j)%2===0 ? '#1a1a1a' : '#222'; ctx.fillRect(i*ts, j*ts, ts, ts); }
+        if(state === 'AIMING_PHASE' && aimTile) { ctx.fillStyle = 'rgba(255, 215, 0, 0.4)'; getRange(selectedSkill, aimTile).forEach(t => ctx.fillRect(t.x*ts, t.y*ts, ts, ts)); }
+        if(state === 'DODGING_PHASE' && tempDodges[dodgingIdx]) { ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.strokeRect(tempDodges[dodgingIdx].x*ts, tempDodges[dodgingIdx].y*ts, ts, ts); }
+        players.forEach(p => { if(p.alive) { ctx.fillStyle = p.color; ctx.fillRect(p.x*ts+ts*0.2, p.y*ts+ts*0.2, ts*0.6, ts*0.6); ctx.fillStyle = "white"; ctx.font = `${Math.max(ts*0.4, 8)}px monospace`; ctx.textAlign = "center"; ctx.fillText(p.name + (p.isBot?" (BOT)":""), p.x*ts + ts/2, p.y*ts - 2); }});
     }
-    function showNotification(name, task) {
-        const pop = document.getElementById('turn-pop'); document.getElementById('pop-name').innerText = name;
-        document.getElementById('pop-name').style.color = players.find(p=>p.name===name)?.color || 'white';
-        document.getElementById('pop-task').innerText = task; pop.classList.add('show-pop');
-        setTimeout(()=>pop.classList.remove('show-pop'), 1200);
-    }
-    function updateHP() {
-        const cont = document.getElementById('hp-container'); cont.innerHTML = '';
-        players.forEach((p, i) => { 
-            let pct = (p.hp / p.maxHp) * 100;
-            cont.innerHTML += `<div class="hp-item ${i===turnIdx?'active-p':''}" style="opacity:${p.alive?1:0.3}">
-            <div style="color:${p.color}; font-weight:bold">${p.name} (${p.hp})</div><div class="hp-bar"><div class="hp-fill" style="width:${pct}%"></div></div></div>`; 
-        });
-    }
-    canvas.addEventListener('mousedown', (e) => {
-        if(players[turnIdx]?.isBot && state==='AIMING_PHASE') return;
-        if(players[dodgingIdx]?.isBot && state==='DODGING_PHASE') return;
-        const rect = canvas.getBoundingClientRect();
-        const x = Math.floor(((e.clientX - rect.left) / rect.width) * gridSize);
-        const y = Math.floor(((e.clientY - rect.top) / rect.height) * gridSize);
-        if(state === 'AIMING_PHASE' && selectedSkill) { aimTile = {x, y}; document.getElementById('confirm-btn').style.display = 'block'; }
-        else if(state === 'DODGING_PHASE') { tempDodges[dodgingIdx] = {x, y}; document.getElementById('confirm-btn').style.display = 'block'; }
-        render();
-    });
+    function showNotification(name, task) { const pop = document.getElementById('turn-pop'); document.getElementById('pop-name').innerText = name; document.getElementById('pop-name').style.color = players.find(p=>p.name===name)?.color || 'white'; document.getElementById('pop-task').innerText = task; pop.classList.add('show-pop'); setTimeout(()=>pop.classList.remove('show-pop'), 1200); }
+    function updateHP() { const cont = document.getElementById('hp-container'); cont.innerHTML = ''; players.forEach((p, i) => { let pct = (p.hp / p.maxHp) * 100; cont.innerHTML += `<div class="hp-item ${i===turnIdx?'active-p':''}" style="opacity:${p.alive?1:0.3}"><div style="color:${p.color}; font-weight:bold">${p.name} (${p.hp})</div><div class="hp-bar"><div class="hp-fill" style="width:${pct}%"></div></div></div>`; }); }
+    canvas.addEventListener('mousedown', (e) => { if(players[turnIdx]?.isBot && state==='AIMING_PHASE') return; if(players[dodgingIdx]?.isBot && state==='DODGING_PHASE') return; const rect = canvas.getBoundingClientRect(); const x = Math.floor(((e.clientX - rect.left) / rect.width) * gridSize); const y = Math.floor(((e.clientY - rect.top) / rect.height) * gridSize); if(state === 'AIMING_PHASE' && selectedSkill) { aimTile = {x, y}; document.getElementById('confirm-btn').style.display = 'block'; } else if(state === 'DODGING_PHASE') { tempDodges[dodgingIdx] = {x, y}; document.getElementById('confirm-btn').style.display = 'block'; } render(); });
     function pickSkill(s) { if(state !== 'AIMING_PHASE' || players[turnIdx].isBot) return; selectedSkill = s; document.querySelectorAll('.controls button').forEach(b => b.classList.remove('skill-selected')); document.getElementById('btn-' + s).classList.add('skill-selected'); render(); }
     function handleConfirm() { if(state === 'AIMING_PHASE') startNextDodge(0); else if(state === 'DODGING_PHASE') startNextDodge(dodgingIdx + 1); }
-    function checkWinState() {
-        const survivors = players.filter(p => p.alive);
-        if(survivors.length <= 1) { alert("WINNER: " + (survivors[0]?.name || "NONE")); location.reload(); }
-        else { do { turnIdx = (turnIdx + 1) % players.length; } while (!players[turnIdx].alive); startAttackerPhase(); }
-    }
+    function checkWinState() { const survivors = players.filter(p => p.alive); if(survivors.length <= 1) { alert("WINNER: " + (survivors[0]?.name || "NONE")); location.reload(); } else { do { turnIdx = (turnIdx + 1) % players.length; } while (!players[turnIdx].alive); startAttackerPhase(); } }
     function log(m) { const h = document.getElementById('history'); h.innerHTML = `<div>> ${m}</div>` + h.innerHTML; }
 </script>
 </body>
