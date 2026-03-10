@@ -8,9 +8,10 @@
         :root { --bg: #0b0b0e; --gold: #ffd700; --ui: #1a1a1a; --active: #4e7fff; }
         body { background-color: var(--bg); color: white; font-family: 'Courier New', monospace; margin: 0; display: flex; flex-direction: column; align-items: center; touch-action: manipulation; overflow: hidden; height: 100vh; }
         
-        #setup-screen { position: absolute; inset: 0; background: var(--bg); z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
-        input { background: #333; border: 1px solid #666; color: white; padding: 8px; width: 140px; border-radius: 4px; margin: 5px; }
-
+        #setup-screen { position: absolute; inset: 0; background: var(--bg); z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; text-align: center; }
+        .setup-box { background: #1a1a1a; padding: 20px; border: 2px solid #444; border-radius: 12px; width: 90%; max-width: 400px; }
+        input { background: #333; border: 1px solid #666; color: white; padding: 8px; width: 100px; border-radius: 4px; margin: 5px; text-align: center; }
+        
         #game-wrapper { width: 95vw; max-width: 500px; display: flex; flex-direction: column; gap: 5px; height: 100vh; padding: 5px 0; }
         canvas { width: 100%; aspect-ratio: 1/1; image-rendering: pixelated; border: 2px solid #444; background: #222; }
         
@@ -29,7 +30,6 @@
         .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; background: var(--ui); padding: 10px; border-radius: 5px; }
         button { background: #333; color: white; border: 1px solid #555; padding: 12px 2px; font-size: 10px; font-weight: bold; border-radius: 4px; }
         button.skill-selected { background: var(--active); border-color: white; }
-        
         #confirm-btn { grid-column: span 2; background: #1b5e20; display: none; font-size: 16px; border: 2px solid #fff; margin-top: 5px;}
         #history { flex-grow: 1; background: #000; padding: 8px; font-size: 10px; overflow-y: auto; border: 1px solid #333; border-radius: 5px; color: #888; }
         .quake { animation: quake 0.4s infinite; }
@@ -48,10 +48,19 @@
 <audio id="sndMiss" src="miss.mp3"></audio>
 
 <div id="setup-screen">
-    <h1 style="color:var(--gold);">MEGA WIZARD CHAOS</h1>
-    <p>Players: <input type="number" id="p-count" value="2" min="2" max="8" onchange="genInputs()"></p>
-    <div id="p-names" style="max-height: 40vh; overflow-y: auto;"></div>
-    <button onclick="startGame()" style="padding: 15px 40px; font-size: 18px; background: var(--active); color: white; border-radius: 8px; margin-top:10px;">START BATTLE</button>
+    <div class="setup-box">
+        <h1 style="color:var(--gold); margin-top:0;">CHAOS SETUP</h1>
+        
+        <label>Player Count: </label>
+        <input type="number" id="p-count" value="2" min="2" max="8" onchange="genInputs()"><br>
+        
+        <label>Starting HP: </label>
+        <input type="number" id="start-hp" value="100" min="10" max="999"><br>
+
+        <div id="p-names" style="max-height: 30vh; overflow-y: auto; margin: 15px 0; border-top: 1px solid #444; padding-top: 10px;"></div>
+        
+        <button onclick="startGame()" style="width: 100%; padding: 15px; font-size: 18px; background: var(--active); color: white; border: none; border-radius: 8px; cursor: pointer;">START BATTLE</button>
+    </div>
 </div>
 
 <div id="game-wrapper">
@@ -75,6 +84,21 @@
 </div>
 
 <script>
+    // ==========================================
+    // EASY DAMAGE CONFIGURATION
+    // Change these numbers to adjust balance
+    // ==========================================
+    const DAMAGE_VALUES = {
+        'KO':    100,  // Damage for One-Hit KO
+        'AREA':  30,   // Damage for Mass Blast
+        'LINE':  50,   // Damage for Thick Cross
+        'DIAG':  50,   // Damage for Thick X-Diagonal
+        'QUEEN': 35    // Damage for Mega Queen
+    };
+    
+    const CRIT_CHANCE = 0.10; // 10% chance for Double Damage
+    // ==========================================
+
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     const wrapper = document.getElementById('game-wrapper');
@@ -82,7 +106,7 @@
     const sndHit = document.getElementById('sndHit');
     const sndMiss = document.getElementById('sndMiss');
     
-    let musicMuted = false, sfxMuted = false;
+    let musicMuted = false, sfxMuted = false, initialHP = 100;
     let players = [], turnIdx = 0, dodgingIdx = -1;
     let gridSize = 10, ts = 80;
     let state = 'IDLE', selectedSkill = null, aimTile = null;
@@ -102,6 +126,8 @@
     function startGame() {
         bgm.play().catch(() => {});
         const count = parseInt(document.getElementById('p-count').value);
+        initialHP = parseInt(document.getElementById('start-hp').value);
+
         if(count <= 2) gridSize = 10;
         else if(count === 3) gridSize = 12;
         else if(count === 4) gridSize = 16;
@@ -112,66 +138,13 @@
         for(let i=0; i<count; i++) {
             players.push({
                 name: document.getElementById('name-'+i).value,
-                hp: 100, x: Math.floor(Math.random() * gridSize), y: Math.floor(Math.random() * gridSize),
+                hp: initialHP, maxHp: initialHP,
+                x: Math.floor(Math.random() * gridSize), y: Math.floor(Math.random() * gridSize),
                 color: `hsl(${(i * 360/count)}, 70%, 60%)`, alive: true
             });
         }
         document.getElementById('setup-screen').style.display = 'none';
         startAttackerPhase();
-    }
-
-    function startAttackerPhase() {
-        state = 'AIMING_PHASE'; selectedSkill = null; aimTile = null; tempDodges = {};
-        updateHP();
-        document.querySelectorAll('.controls button').forEach(b => b.classList.remove('skill-selected'));
-        document.getElementById('ui-controls').style.opacity = '1';
-        document.getElementById('confirm-btn').style.display = 'none';
-        showNotification(players[turnIdx].name, "AIM YOUR MEGA-SPELL");
-        render();
-    }
-
-    function getRange(skill, origin) {
-        if(!origin) return [];
-        let t = []; const {x, y} = origin;
-        const s = (gridSize === 32) ? 1 : 0; // Growth factor: if 32x32, we offset by 1 to make it 3x3
-
-        function addZone(cx, cy) {
-            if(gridSize < 32) t.push({x: cx, y: cy});
-            else { // 3x3 growth logic
-                for(let dx=-1; dx<=1; dx++) {
-                    for(let dy=-1; dy<=1; dy++) t.push({x: cx+dx, y: cy+dy});
-                }
-            }
-        }
-
-        if(skill==='KO') addZone(x, y);
-        if(skill==='LINE') { 
-            for(let i=0; i<gridSize; i++) { addZone(i, y); addZone(x, i); }
-        }
-        if(skill==='DIAG') {
-            for(let i=-gridSize; i<gridSize; i++) { addZone(x+i, y+i); addZone(x+i, y-i); }
-        }
-        if(skill==='AREA') {
-            let areaSize = (gridSize === 32) ? 6 : 2; // 12x12 total if 32x32
-            for(let i=-areaSize; i<=areaSize; i++) {
-                for(let j=-areaSize; j<=areaSize; j++) t.push({x: x+i, y: y+j});
-            }
-        }
-        if(skill==='QUEEN') {
-            for(let i=0; i<gridSize; i++) {
-                addZone(x+i, y); addZone(x-i, y); addZone(x, y+i); addZone(x, y-i);
-                addZone(x+i, y+i); addZone(x-i, y-i); addZone(x+i, y-i); addZone(x-i, y+i);
-            }
-        }
-        // Filter unique tiles within bounds
-        const seen = new Set();
-        return t.filter(v => {
-            const key = `${v.x},${v.y}`;
-            if(v.x>=0 && v.x<gridSize && v.y>=0 && v.y<gridSize && !seen.has(key)) {
-                seen.add(key); return true;
-            }
-            return false;
-        });
     }
 
     function executeChaos() {
@@ -191,7 +164,16 @@
 
         hits.forEach(i => {
             let p = players[i];
-            let dmg = (selectedSkill==='KO') ? 100 : (selectedSkill==='AREA') ? 25 : 45;
+            let dmg = DAMAGE_VALUES[selectedSkill] || 20;
+            
+            // Critical Hit Logic
+            if(Math.random() < CRIT_CHANCE) {
+                dmg *= 2;
+                log(`CRITICAL HIT! ${p.name} took ${dmg} damage!`);
+            } else {
+                log(`${p.name} hit for ${dmg} damage.`);
+            }
+
             p.hp -= dmg; if(p.hp <= 0) p.alive = false;
         });
 
@@ -205,7 +187,45 @@
         }, 50);
     }
 
-    // --- REUSED CORE LOGIC ---
+    // --- RANGE LOGIC (UNCHANGED BUT ROBUST) ---
+    function getRange(skill, origin) {
+        if(!origin) return [];
+        let t = []; const {x, y} = origin;
+        function addZone(cx, cy) {
+            if(gridSize < 32) t.push({x: cx, y: cy});
+            else { for(let dx=-1; dx<=1; dx++) for(let dy=-1; dy<=1; dy++) t.push({x: cx+dx, y: cy+dy}); }
+        }
+        if(skill==='KO') addZone(x, y);
+        if(skill==='LINE') { for(let i=0; i<gridSize; i++) { addZone(i, y); addZone(x, i); } }
+        if(skill==='DIAG') { for(let i=-gridSize; i<gridSize; i++) { addZone(x+i, y+i); addZone(x+i, y-i); } }
+        if(skill==='AREA') {
+            let areaSize = (gridSize === 32) ? 6 : 2;
+            for(let i=-areaSize; i<=areaSize; i++) for(let j=-areaSize; j<=areaSize; j++) t.push({x: x+i, y: y+j});
+        }
+        if(skill==='QUEEN') {
+            for(let i=0; i<gridSize; i++) {
+                addZone(x+i, y); addZone(x-i, y); addZone(x, y+i); addZone(x, y-i);
+                addZone(x+i, y+i); addZone(x-i, y-i); addZone(x+i, y-i); addZone(x-i, y+i);
+            }
+        }
+        const seen = new Set();
+        return t.filter(v => {
+            const key = `${v.x},${v.y}`;
+            if(v.x>=0 && v.x<gridSize && v.y>=0 && v.y<gridSize && !seen.has(key)) { seen.add(key); return true; }
+            return false;
+        });
+    }
+
+    // --- RENDER & TURN LOGIC ---
+    function startAttackerPhase() {
+        state = 'AIMING_PHASE'; selectedSkill = null; aimTile = null; tempDodges = {};
+        updateHP();
+        document.querySelectorAll('.controls button').forEach(b => b.classList.remove('skill-selected'));
+        document.getElementById('ui-controls').style.opacity = '1';
+        document.getElementById('confirm-btn').style.display = 'none';
+        showNotification(players[turnIdx].name, "AIM YOUR SPELL");
+        render();
+    }
     function render() {
         ctx.clearRect(0,0,800,800);
         for(let i=0;i<gridSize;i++) for(let j=0;j<gridSize;j++) {
@@ -232,8 +252,11 @@
     }
     function updateHP() {
         const cont = document.getElementById('hp-container'); cont.innerHTML = '';
-        players.forEach((p, i) => { cont.innerHTML += `<div class="hp-item ${i===turnIdx?'active-p':''}" style="opacity:${p.alive?1:0.3}">
-            <div style="color:${p.color}; font-weight:bold">${p.name}</div><div class="hp-bar"><div class="hp-fill" style="width:${p.hp}%"></div></div></div>`; });
+        players.forEach((p, i) => { 
+            let pct = (p.hp / p.maxHp) * 100;
+            cont.innerHTML += `<div class="hp-item ${i===turnIdx?'active-p':''}" style="opacity:${p.alive?1:0.3}">
+            <div style="color:${p.color}; font-weight:bold">${p.name} (${p.hp})</div><div class="hp-bar"><div class="hp-fill" style="width:${pct}%"></div></div></div>`; 
+        });
     }
     canvas.addEventListener('mousedown', (e) => {
         const rect = canvas.getBoundingClientRect();
@@ -255,6 +278,7 @@
         if(survivors.length <= 1) { alert("WINNER: " + (survivors[0]?.name || "NONE")); location.reload(); }
         else { do { turnIdx = (turnIdx + 1) % players.length; } while (!players[turnIdx].alive); startAttackerPhase(); }
     }
+    function log(m) { const h = document.getElementById('history'); h.innerHTML = `<div>> ${m}</div>` + h.innerHTML; }
 </script>
 </body>
 </html>
